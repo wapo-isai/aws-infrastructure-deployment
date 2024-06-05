@@ -1,0 +1,7 @@
+private static String getVpcIdFromParameterStore( Construct scope,
+        String environmentName) {
+return StringParameter.fromStringParameterName( scope,
+          PARAMETER_VPC_ID,
+          createParameterName(environmentName, PARAMETER_VPC_ID))
+    .getStringValue();
+}
