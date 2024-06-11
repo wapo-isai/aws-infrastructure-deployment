@@ -1,17 +1,18 @@
-import * as cdk from "@aws-cdk/core";
-import * as ecr from "@aws-cdk/aws-ecr";
-import * as iam from "@aws-cdk/aws-iam";
+import * as cdk from "aws-cdk-lib";
+import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as iam from "aws-cdk-lib/aws-iam";
+import {Construct} from "constructs";
 
 export class DockerRepositoryStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
   }
 }
 
-class DockerRepository extends cdk.Construct {
+export class DockerRepository extends Construct {
   ecrRepository: ecr.IRepository;
   constructor(
-    scope: cdk.Construct,
+    scope: Construct,
     id: string,
     awsEnvironment: cdk.Environment,
     dockerRepositoryInputParameters: DockerRepositoryInputParameters
@@ -41,7 +42,7 @@ class DockerRepository extends cdk.Construct {
   }
 }
 
-class DockerRepositoryInputParameters {
+export class DockerRepositoryInputParameters {
   dockerRepositoryName: string;
   accountId: string;
   maxImageCount: number;
@@ -54,28 +55,3 @@ class DockerRepositoryInputParameters {
     this.retainRegistryOnDelete = false;
   }
 }
-
-const app: cdk.App = new cdk.App();
-const applicationName: string = app.node.tryGetContext("applicationName");
-const accountId: string = app.node.tryGetContext("accountId");
-const region: string = app.node.tryGetContext("region");
-const awsEnvironment: cdk.Environment = {account: accountId, region};
-
-const dockerRepositoryStack: DockerRepositoryStack = new DockerRepositoryStack(
-  app,
-  "DockerRepositoryStack",
-  {
-    stackName: applicationName + "-DockerRepository",
-    env: awsEnvironment,
-  }
-);
-
-const dockerRepositoryInputParameters: DockerRepositoryInputParameters =
-  new DockerRepositoryInputParameters(applicationName, accountId);
-
-new DockerRepository(
-  dockerRepositoryStack,
-  "DockerRepository",
-  awsEnvironment,
-  dockerRepositoryInputParameters
-);

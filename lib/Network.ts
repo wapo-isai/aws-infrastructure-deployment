@@ -1,8 +1,9 @@
-import * as cdk from "@aws-cdk/core";
-import * as ec2 from "@aws-cdk/aws-ec2";
-import * as elbv2 from "@aws-cdk/aws-elasticloadbalancingv2";
-import * as ssm from "@aws-cdk/aws-ssm";
-import * as ecs from "@aws-cdk/aws-ecs";
+import * as cdk from "aws-cdk-lib";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as ssm from "aws-cdk-lib/aws-ssm";
+import * as ecs from "aws-cdk-lib/aws-ecs";
+import {Construct} from "constructs";
 
 enum ParameterVariables {
   PARAMETER_VPC_ID = "vpcId",
@@ -32,13 +33,13 @@ export interface NetworkOutputParameters {
   loadBalancerCanonicalHostedZoneId: string;
 }
 
-class NetworkStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+export class NetworkStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
   }
 }
 
-export class Network extends cdk.Construct {
+export class Network extends Construct {
   vpc: ec2.IVpc;
   environmentName: string;
   ecsCluster: ecs.ICluster;
@@ -47,7 +48,7 @@ export class Network extends cdk.Construct {
   loadBalancer: elbv2.IApplicationLoadBalancer;
 
   constructor(
-    scope: cdk.Construct,
+    scope: Construct,
     id: string,
     awsEnvironment: cdk.Environment,
     environmentName: string
@@ -235,7 +236,7 @@ export class Network extends cdk.Construct {
   }
 
   static getOutputParametersFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ): NetworkOutputParameters {
     let networkParams: NetworkOutputParameters = {
@@ -281,10 +282,7 @@ export class Network extends cdk.Construct {
     };
     return networkParams;
   }
-  static getVpcIdFromParameterStore(
-    scope: cdk.Construct,
-    environmentName: string
-  ) {
+  static getVpcIdFromParameterStore(scope: Construct, environmentName: string) {
     return ssm.StringParameter.fromStringParameterName(
       scope,
       ParameterVariables.PARAMETER_VPC_ID,
@@ -296,7 +294,7 @@ export class Network extends cdk.Construct {
   }
 
   static getHttpListenerArnFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -310,7 +308,7 @@ export class Network extends cdk.Construct {
   }
 
   static getLoadbalancerSecurityGroupIdFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -323,7 +321,7 @@ export class Network extends cdk.Construct {
     ).stringValue;
   }
   static getEcsClusterNameFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -336,7 +334,7 @@ export class Network extends cdk.Construct {
     ).stringValue;
   }
   static getIsolatedSubnetsFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return [
@@ -359,7 +357,7 @@ export class Network extends cdk.Construct {
     ];
   }
   static getPublicSubnetsFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return [
@@ -382,7 +380,7 @@ export class Network extends cdk.Construct {
     ];
   }
   static getAvailabilityZonesFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return [
@@ -405,7 +403,7 @@ export class Network extends cdk.Construct {
     ];
   }
   static getLoadBalancerArnFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -418,7 +416,7 @@ export class Network extends cdk.Construct {
     ).stringValue;
   }
   static getLoadBalancerDnsNameFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -431,7 +429,7 @@ export class Network extends cdk.Construct {
     ).stringValue;
   }
   static getLoadBalancerCanonicalHostedZoneIdFromParameterStore(
-    scope: cdk.Construct,
+    scope: Construct,
     environmentName: string
   ) {
     return ssm.StringParameter.fromStringParameterName(
@@ -444,16 +442,3 @@ export class Network extends cdk.Construct {
     ).stringValue;
   }
 }
-const app = new cdk.App();
-
-let environmentName: string = app.node.tryGetContext("environmentName");
-let accountId: string = app.node.tryGetContext("accountId");
-let region: string = app.node.tryGetContext("region");
-let awsEnvironment: cdk.Environment = {account: accountId, region};
-
-const networkStack: NetworkStack = new NetworkStack(app, "NetworkStack", {
-  stackName: environmentName + "-Network",
-  env: awsEnvironment,
-});
-
-new Network(networkStack, "Network", awsEnvironment, environmentName);

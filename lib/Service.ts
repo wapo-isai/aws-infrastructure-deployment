@@ -1,21 +1,22 @@
-import * as cdk from "@aws-cdk/core";
-import * as iam from "@aws-cdk/aws-iam";
-import * as logs from "@aws-cdk/aws-logs";
-import * as elbv2 from "@aws-cdk/aws-elasticloadbalancingv2";
-import * as ecr from "@aws-cdk/aws-ecr";
-import * as ecs from "@aws-cdk/aws-ecs";
-import * as ec2 from "@aws-cdk/aws-ec2";
-import {NetworkOutputParameters, Network} from "./Network";
+import * as cdk from "aws-cdk-lib/core";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as logs from "aws-cdk-lib/aws-logs";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as ecr from "aws-cdk-lib/aws-ecr";
+import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import {Construct, IConstruct} from "constructs";
+import {NetworkOutputParameters} from "./Network";
 
 export class ServiceStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
   }
 }
 
-class Service extends cdk.Construct {
+export class Service extends Construct {
   constructor(
-    scope: cdk.Construct,
+    scope: Construct,
     id: string,
     awsEnvironment: cdk.Environment,
     applicationEnvironment: ApplicationEnvironment,
@@ -24,7 +25,7 @@ class Service extends cdk.Construct {
   ) {
     super(scope, id);
 
-    const stickySessionConfiguration = [
+    const stickySessionConfiguration: Array<object> = [
       {
         key: "stickiness.enabled",
         value: "true",
@@ -39,7 +40,7 @@ class Service extends cdk.Construct {
       },
     ];
 
-    const deregistrationDelayConfiguration = [
+    const deregistrationDelayConfiguration: Array<object> = [
       {
         key: "deregistration_delay.timeout_seconds",
         value: 5,
@@ -52,24 +53,28 @@ class Service extends cdk.Construct {
       targetGroupAtrb = [...targetGroupAtrb, ...stickySessionConfiguration];
     }
 
-    const targetGroup = new elbv2.CfnTargetGroup(this, "targetGroup", {
-      healthCheckIntervalSeconds:
-        serviceInputParameters.healthCheckIntervalSeconds,
-      healthCheckPath: serviceInputParameters.healthCheckPath,
-      healthCheckPort: serviceInputParameters.containerPort.toString(),
-      healthCheckProtocol: serviceInputParameters.containerProtocol,
-      healthCheckTimeoutSeconds:
-        serviceInputParameters.healthCheckTimeoutSeconds,
-      healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
-      unhealthyThresholdCount: serviceInputParameters.unhealthyThresholdCount,
-      targetGroupAttributes: targetGroupAtrb,
-      targetType: "ip",
-      port: serviceInputParameters.containerPort,
-      protocol: serviceInputParameters.containerProtocol,
-      vpcId: networkOutputParameters.vpcId,
-    });
+    const targetGroup: elbv2.CfnTargetGroup = new elbv2.CfnTargetGroup(
+      this,
+      "targetGroup",
+      {
+        healthCheckIntervalSeconds:
+          serviceInputParameters.healthCheckIntervalSeconds,
+        healthCheckPath: serviceInputParameters.healthCheckPath,
+        healthCheckPort: serviceInputParameters.containerPort.toString(),
+        healthCheckProtocol: serviceInputParameters.containerProtocol,
+        healthCheckTimeoutSeconds:
+          serviceInputParameters.healthCheckTimeoutSeconds,
+        healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
+        unhealthyThresholdCount: serviceInputParameters.unhealthyThresholdCount,
+        targetGroupAttributes: targetGroupAtrb,
+        targetType: "ip",
+        port: serviceInputParameters.containerPort,
+        protocol: serviceInputParameters.containerProtocol,
+        vpcId: networkOutputParameters.vpcId,
+      }
+    );
 
-    const httpListenerRule = new elbv2.CfnListenerRule(
+    const httpListenerRule: elbv2.CfnListenerRule = new elbv2.CfnListenerRule(
       this,
       "httpListenerRule",
       {
@@ -90,34 +95,38 @@ class Service extends cdk.Construct {
       }
     );
 
-    const logGroup = new logs.LogGroup(this, "ecsLogGroup", {
+    const logGroup: logs.LogGroup = new logs.LogGroup(this, "ecsLogGroup", {
       logGroupName: applicationEnvironment.prefix("logs"),
       retention: serviceInputParameters.logRetention,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    const ecsTaskExecutionRole = new iam.Role(this, "ecsTaskExecutionRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      path: "/",
-      inlinePolicies: {
-        EcsTaskExecutionRolePolicy: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              resources: ["*"],
-              actions: [
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-                "logs:CreateLogStream",
-                "logs:PutLogEvents",
-              ],
-            }),
-          ],
-        }),
-      },
-    });
+    const ecsTaskExecutionRole: iam.Role = new iam.Role(
+      this,
+      "ecsTaskExecutionRole",
+      {
+        assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+        path: "/",
+        inlinePolicies: {
+          EcsTaskExecutionRolePolicy: new iam.PolicyDocument({
+            statements: [
+              new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                resources: ["*"],
+                actions: [
+                  "ecr:GetAuthorizationToken",
+                  "ecr:BatchCheckLayerAvailability",
+                  "ecr:GetDownloadUrlForLayer",
+                  "ecr:BatchGetImage",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents",
+                ],
+              }),
+            ],
+          }),
+        },
+      }
+    );
 
     let inlinePolicies = {};
 
@@ -129,23 +138,24 @@ class Service extends cdk.Construct {
       };
     }
 
-    let policy: iam.RoleProps = {
+    const policy: iam.RoleProps = {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
       path: "/",
       inlinePolicies,
     };
 
-    let role = new iam.Role(this, "ecsTaskRole", policy);
+    const role: iam.Role = new iam.Role(this, "ecsTaskRole", policy);
 
     const ecsTaskRole: iam.Role = role;
     let dockerRepositoryUrl: string = "";
 
     if (serviceInputParameters.dockerImageSource.isEcrSource()) {
-      let dockerRepository = ecr.Repository.fromRepositoryName(
-        this,
-        "ecrRepository",
-        serviceInputParameters.dockerImageSource.getDockerRepositoryName()
-      );
+      const dockerRepository: ecr.IRepository =
+        ecr.Repository.fromRepositoryName(
+          this,
+          "ecrRepository",
+          serviceInputParameters.dockerImageSource.getDockerRepositoryName()
+        );
       dockerRepository.grantPull(ecsTaskExecutionRole);
       dockerRepositoryUrl = dockerRepository.repositoryUriForTag(
         serviceInputParameters.dockerImageSource.getDockerImageTag()
@@ -179,15 +189,19 @@ class Service extends cdk.Construct {
         ),
         stopTimeout: 2,
       };
-    const taskDefinition = new ecs.CfnTaskDefinition(this, "taskDefinition", {
-      cpu: serviceInputParameters.cpu.toString(),
-      memory: serviceInputParameters.memory.toString(),
-      networkMode: "awsvpc",
-      requiresCompatibilities: ["FARGATE"],
-      executionRoleArn: ecsTaskExecutionRole.roleArn,
-      taskRoleArn: ecsTaskRole.roleArn,
-      containerDefinitions: [containerDefinitionProperty],
-    });
+    const taskDefinition: ecs.CfnTaskDefinition = new ecs.CfnTaskDefinition(
+      this,
+      "taskDefinition",
+      {
+        cpu: serviceInputParameters.cpu.toString(),
+        memory: serviceInputParameters.memory.toString(),
+        networkMode: "awsvpc",
+        requiresCompatibilities: ["FARGATE"],
+        executionRoleArn: ecsTaskExecutionRole.roleArn,
+        taskRoleArn: ecsTaskRole.roleArn,
+        containerDefinitions: [containerDefinitionProperty],
+      }
+    );
 
     const ecsSecurityGroup: ec2.CfnSecurityGroup = new ec2.CfnSecurityGroup(
       this,
@@ -294,7 +308,7 @@ class Service extends cdk.Construct {
   }
 }
 
-class DockerImageSource {
+export class DockerImageSource {
   dockerImageUrl: string;
   dockerImageTag: string;
   dockerRepositoryName: string;
@@ -322,7 +336,7 @@ class DockerImageSource {
   }
 }
 
-class ServiceInputParameters {
+export class ServiceInputParameters {
   dockerImageSource: DockerImageSource;
   environmentVariables: object;
   securityGroupIdsToGrantIngressFromEcs: Array<string>;
@@ -424,7 +438,7 @@ class ServiceInputParameters {
   }
 }
 
-class ApplicationEnvironment {
+export class ApplicationEnvironment {
   applicationName: string;
   environmentName: string;
   constructor(applicationName: string, environmentName: string) {
@@ -440,72 +454,31 @@ class ApplicationEnvironment {
     return this.environmentName;
   }
 
+  sanitize(environmentName: string) {
+    return environmentName.replace(/[^a-zA-Z0-9]/g, "");
+  }
+
   toString() {
     return this.environmentName + "-" + this.applicationName;
   }
 
   prefix(inputString: string) {
-    return this + "-" + inputString;
+    return (
+      this.environmentName + "-" + this.applicationName + "-" + inputString
+    );
   }
 
   prefixV2(inputString: string, characterLimit: number) {
-    let name = this + "-" + inputString;
+    let name =
+      this.environmentName + "-" + this.applicationName + "-" + inputString;
     if (name.length <= characterLimit) {
       return name;
     }
-    return name.substring(name.length - characterLimit);
+    return name.substring(0, name.length - characterLimit);
   }
 
-  tag(construct: cdk.IConstruct) {
+  tag(construct: IConstruct) {
     cdk.Tags.of(construct).add("environment", this.environmentName);
     cdk.Tags.of(construct).add("application", this.applicationName);
   }
-}
-
-let applicationEnvironment = new ApplicationEnvironment("", "");
-
-const app = new cdk.App();
-
-const environmentName: string = app.node.tryGetContext("environmentName");
-const applicationName: string = app.node.tryGetContext("applicationName");
-const accountId: string = app.node.tryGetContext("accountId");
-const springProfile: string = app.node.tryGetContext("springProfile");
-const dockerImageUrl: string = app.node.tryGetContext("dockerImageUrl");
-const region: string = app.node.tryGetContext("region");
-const awsEnvironment: cdk.Environment = {account: accountId, region};
-
-const serviceStack = new ServiceStack(app, "ServiceStack", {
-  stackName: applicationEnvironment.prefix("Service"),
-  env: awsEnvironment,
-});
-
-const dockerImageSource = new DockerImageSource(dockerImageUrl);
-
-const networkOutputParameters = Network.getOutputParametersFromParameterStore(
-  serviceStack,
-  applicationEnvironment.getEnvironmentName()
-);
-
-const serviceInputParameters = new ServiceInputParameters(
-  dockerImageSource,
-  environmentVariables(springProfile)
-);
-
-serviceInputParameters.withHealthCheckIntervalSeconds(30);
-
-new Service(
-  serviceStack,
-  "Service",
-  awsEnvironment,
-  applicationEnvironment,
-  serviceInputParameters,
-  networkOutputParameters
-);
-
-function environmentVariables(springProfile: string) {
-  let obj = {
-    "SPRING_PROFILES_ACTIVE": springProfile,
-  };
-
-  return obj;
 }
