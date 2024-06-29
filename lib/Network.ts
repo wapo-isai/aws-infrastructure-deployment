@@ -90,42 +90,27 @@ export class Network extends Construct {
       }
     );
 
-    const ingressFromPublic = new ec2.CfnSecurityGroupIngress(
-      this,
-      "ingressToLoadbalancer",
-      {
-        groupId: this.loadbalancerSecurityGroup.securityGroupId,
-        cidrIp: "0.0.0.0/0",
-        ipProtocol: "-1",
-      }
+    this.loadbalancerSecurityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80)
+    );
+
+    this.loadbalancerSecurityGroup.addIngressRule(
+      ec2.Peer.anyIpv6(),
+      ec2.Port.tcp(80)
     );
 
     this.loadBalancer = new elbv2.ApplicationLoadBalancer(
       this,
       "loadbalancer",
       {
+        vpc: this.vpc,
         loadBalancerName: this.prefixWithEnvironmentName("loadbalancer"),
-        vpc: this.vpc,
         internetFacing: true,
+        deletionProtection: false,
+        ipAddressType: elbv2.IpAddressType.IPV4,
         securityGroup: this.loadbalancerSecurityGroup,
-      }
-    );
-
-    const dummyTargetGroup = new elbv2.ApplicationTargetGroup(
-      this,
-      "targetgroup",
-      {
-        vpc: this.vpc,
-        port: 8080,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        targetGroupName: this.prefixWithEnvironmentName("no-op-targetGroup"),
-        targetType: elbv2.TargetType.IP,
-        deregistrationDelay: cdk.Duration.seconds(5),
-        healthCheck: {
-          healthyThresholdCount: 2,
-          interval: cdk.Duration.seconds(10),
-          timeout: cdk.Duration.seconds(5),
-        },
+        vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
       }
     );
 
@@ -133,10 +118,6 @@ export class Network extends Construct {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
       open: true,
-    });
-
-    httpListener.addTargetGroups("http-defaultTargetGroup", {
-      targetGroups: [dummyTargetGroup],
     });
 
     this.createOutputParameters();

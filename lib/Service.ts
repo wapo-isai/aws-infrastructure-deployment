@@ -7,6 +7,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import {Construct, IConstruct} from "constructs";
 import {NetworkOutputParameters} from "./Network";
+import {PrivateDnsNamespace} from "aws-cdk-lib/aws-servicediscovery";
 
 export class ServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -15,83 +16,43 @@ export class ServiceStack extends cdk.Stack {
 }
 
 export class Service extends Construct {
+  vpc: ec2.IVpc;
+  usersDockerRepositoryUrl: string;
+  ordersDockerRepositoryUrl: string;
+  productsDockerRepositoryUrl: string;
+  ecsCluster: ecs.ICluster;
+
   constructor(
     scope: Construct,
     id: string,
     awsEnvironment: cdk.Environment,
     applicationEnvironment: ApplicationEnvironment,
     serviceInputParameters: ServiceInputParameters,
-    networkOutputParameters: NetworkOutputParameters
+    networkOutputParameters: NetworkOutputParameters,
+    productsDockerRepositoryUrl: string,
+    ordersDockerRepositoryUrl: string,
+    usersDockerRepositoryUrl: string
   ) {
     super(scope, id);
 
-    const stickySessionConfiguration: Array<object> = [
-      {
-        key: "stickiness.enabled",
-        value: "true",
-      },
-      {
-        key: "stickiness.type",
-        value: "lb_cookie",
-      },
-      {
-        key: "stickiness.lb_cookie.duration_seconds",
-        value: "3600",
-      },
-    ];
+    this.usersDockerRepositoryUrl = usersDockerRepositoryUrl;
+    this.ordersDockerRepositoryUrl = ordersDockerRepositoryUrl;
+    this.productsDockerRepositoryUrl = productsDockerRepositoryUrl;
 
-    const deregistrationDelayConfiguration: Array<object> = [
-      {
-        key: "deregistration_delay.timeout_seconds",
-        value: 5,
-      },
-    ];
+    const vpcId = networkOutputParameters.vpcId;
 
-    let targetGroupAtrb: Array<object> = [...deregistrationDelayConfiguration];
+    this.vpc = ec2.Vpc.fromLookup(this, "ImportedVpc", {
+      vpcId: vpcId,
+    });
 
-    if (serviceInputParameters.stickySessionsEnabled) {
-      targetGroupAtrb = [...targetGroupAtrb, ...stickySessionConfiguration];
-    }
+    const clusterName = networkOutputParameters.ecsClusterName;
 
-    const targetGroup: elbv2.CfnTargetGroup = new elbv2.CfnTargetGroup(
+    this.ecsCluster = ecs.Cluster.fromClusterAttributes(
       this,
-      "targetGroup",
+      "FromClusterName",
       {
-        healthCheckIntervalSeconds:
-          serviceInputParameters.healthCheckIntervalSeconds,
-        healthCheckPath: serviceInputParameters.healthCheckPath,
-        healthCheckPort: serviceInputParameters.containerPort.toString(),
-        healthCheckProtocol: serviceInputParameters.containerProtocol,
-        healthCheckTimeoutSeconds:
-          serviceInputParameters.healthCheckTimeoutSeconds,
-        healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
-        unhealthyThresholdCount: serviceInputParameters.unhealthyThresholdCount,
-        targetGroupAttributes: targetGroupAtrb,
-        targetType: "ip",
-        port: serviceInputParameters.containerPort,
-        protocol: serviceInputParameters.containerProtocol,
-        vpcId: networkOutputParameters.vpcId,
-      }
-    );
-
-    const httpListenerRule: elbv2.CfnListenerRule = new elbv2.CfnListenerRule(
-      this,
-      "httpListenerRule",
-      {
-        actions: [
-          {
-            type: "forward",
-            targetGroupArn: targetGroup.ref,
-          },
-        ],
-        conditions: [
-          {
-            field: "path-pattern",
-            values: ["*"],
-          },
-        ],
-        listenerArn: networkOutputParameters.httpListenerArn,
-        priority: 2,
+        clusterName: clusterName,
+        vpc: this.vpc,
       }
     );
 
@@ -106,6 +67,12 @@ export class Service extends Construct {
       "ecsTaskExecutionRole",
       {
         assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "service-role/AmazonECSTaskExecutionRolePolicy"
+          ),
+          iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchFullAccess"),
+        ],
         path: "/",
         inlinePolicies: {
           EcsTaskExecutionRolePolicy: new iam.PolicyDocument({
@@ -144,87 +111,144 @@ export class Service extends Construct {
       inlinePolicies,
     };
 
-    const role: iam.Role = new iam.Role(this, "ecsTaskRole", policy);
+    const ecsTaskRole: iam.Role = new iam.Role(this, "ecsTaskRole", policy);
 
-    const ecsTaskRole: iam.Role = role;
-    let dockerRepositoryUrl: string = "";
-
-    if (serviceInputParameters.dockerImageSource.isEcrSource()) {
-      const dockerRepository: ecr.IRepository =
-        ecr.Repository.fromRepositoryName(
-          this,
-          "ecrRepository",
-          serviceInputParameters.dockerImageSource.getDockerRepositoryName()
-        );
-      dockerRepository.grantPull(ecsTaskExecutionRole);
-      dockerRepositoryUrl = dockerRepository.repositoryUriForTag(
-        serviceInputParameters.dockerImageSource.getDockerImageTag()
-      );
-    } else {
-      dockerRepositoryUrl =
-        serviceInputParameters.dockerImageSource.dockerImageUrl;
-    }
-
-    const containerDefinitionProperty: ecs.CfnTaskDefinition.ContainerDefinitionProperty =
-      {
-        name: this.containerName(applicationEnvironment),
-        cpu: serviceInputParameters.cpu,
-        memory: serviceInputParameters.memory,
-        image: dockerRepositoryUrl,
-        logConfiguration: {
-          logDriver: "awslogs",
-          options: {
-            "awslogs-group": logGroup.logGroupName,
-            "awslogs-region": awsEnvironment.region
-              ? awsEnvironment.region
-              : "us-east-1",
-            "awslogs-stream-prefix": applicationEnvironment.prefix("stream"),
-            "awslogs-datetime-format":
-              serviceInputParameters.awslogsDateTimeFormat,
-          },
-        },
-        portMappings: [{containerPort: serviceInputParameters.containerPort}],
-        environment: this.toKeyValuePairs(
-          serviceInputParameters.environmentVariables
-        ),
-        stopTimeout: 2,
-      };
-    const taskDefinition: ecs.CfnTaskDefinition = new ecs.CfnTaskDefinition(
+    const firstTaskDefinition: ecs.TaskDefinition = new ecs.TaskDefinition(
       this,
-      "taskDefinition",
+      "firstTaskDefinition",
       {
-        cpu: serviceInputParameters.cpu.toString(),
-        memory: serviceInputParameters.memory.toString(),
-        networkMode: "awsvpc",
-        requiresCompatibilities: ["FARGATE"],
-        executionRoleArn: ecsTaskExecutionRole.roleArn,
-        taskRoleArn: ecsTaskRole.roleArn,
-        containerDefinitions: [containerDefinitionProperty],
+        compatibility: ecs.Compatibility.FARGATE,
+        cpu: "1024",
+        memoryMiB: "2048",
+        networkMode: ecs.NetworkMode.AWS_VPC,
+        executionRole: ecsTaskExecutionRole,
+        taskRole: ecsTaskRole,
+        runtimePlatform: {
+          operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+          cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        },
       }
     );
 
-    const ecsSecurityGroup: ec2.CfnSecurityGroup = new ec2.CfnSecurityGroup(
+    const secondTaskDefinition: ecs.TaskDefinition = new ecs.TaskDefinition(
+      this,
+      "secondTaskDefinition",
+      {
+        compatibility: ecs.Compatibility.FARGATE,
+        cpu: "1024",
+        memoryMiB: "2048",
+        networkMode: ecs.NetworkMode.AWS_VPC,
+        executionRole: ecsTaskExecutionRole,
+        taskRole: ecsTaskRole,
+        runtimePlatform: {
+          operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+          cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        },
+      }
+    );
+
+    const thirdTaskDefinition: ecs.TaskDefinition = new ecs.TaskDefinition(
+      this,
+      "thirdTaskDefinition",
+      {
+        compatibility: ecs.Compatibility.FARGATE,
+        cpu: "1024",
+        memoryMiB: "2048",
+        networkMode: ecs.NetworkMode.AWS_VPC,
+        executionRole: ecsTaskExecutionRole,
+        taskRole: ecsTaskRole,
+        runtimePlatform: {
+          operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+          cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        },
+      }
+    );
+
+    const namespace = new PrivateDnsNamespace(this, "ServiceNamespace", {
+      name: "local",
+      vpc: this.vpc,
+    });
+
+    const firstContainer = firstTaskDefinition.addContainer(
+      "ProductContainer",
+      {
+        containerName: applicationEnvironment.prefix("product-container"),
+        image: ecs.ContainerImage.fromRegistry(
+          this.productsDockerRepositoryUrl
+        ),
+        cpu: serviceInputParameters.cpu,
+        memoryLimitMiB: serviceInputParameters.memory,
+        portMappings: [{containerPort: 8080, name: "product-port-mapping"}],
+        environment: serviceInputParameters.environmentVariables,
+        logging: ecs.LogDriver.awsLogs({
+          streamPrefix: "demoLogs",
+          logGroup: logGroup,
+        }),
+      }
+    );
+
+    const secondContainer = secondTaskDefinition.addContainer(
+      "OrdersContainer",
+      {
+        containerName: applicationEnvironment.prefix("orders-container"),
+        image: ecs.ContainerImage.fromRegistry(this.ordersDockerRepositoryUrl),
+        cpu: serviceInputParameters.cpu,
+        memoryLimitMiB: serviceInputParameters.memory,
+        portMappings: [{containerPort: 8081, name: "order-port-mapping"}],
+        environment: serviceInputParameters.environmentVariables,
+        logging: ecs.LogDriver.awsLogs({
+          streamPrefix: "demoLogs",
+          logGroup: logGroup,
+        }),
+      }
+    );
+
+    const thirdContainer = thirdTaskDefinition.addContainer("UsersContainer", {
+      containerName: applicationEnvironment.prefix("users-container"),
+      image: ecs.ContainerImage.fromRegistry(this.usersDockerRepositoryUrl),
+      cpu: serviceInputParameters.cpu,
+      memoryLimitMiB: serviceInputParameters.memory,
+      portMappings: [{containerPort: 8082, name: "user-port-mapping"}],
+      environment: serviceInputParameters.environmentVariables,
+      logging: ecs.LogDriver.awsLogs({
+        streamPrefix: "demoLogs",
+        logGroup: logGroup,
+      }),
+    });
+
+    const ecsSecurityGroup: ec2.SecurityGroup = new ec2.SecurityGroup(
       this,
       "ecsSecurityGroup",
       {
-        vpcId: networkOutputParameters.vpcId,
-        groupDescription: "SecurityGroup for the ECS containers",
+        vpc: this.vpc,
+        allowAllOutbound: true,
       }
     );
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(8080));
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(8081));
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(8082));
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(8080));
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(8081));
+
+    ecsSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(8082));
 
     const ecsIngressFromSelf: ec2.CfnSecurityGroupIngress =
       new ec2.CfnSecurityGroupIngress(this, "ecsIngressFromSelf", {
         ipProtocol: "-1",
-        sourceSecurityGroupId: ecsSecurityGroup.attrGroupId,
-        groupId: ecsSecurityGroup.attrGroupId,
+        sourceSecurityGroupId: ecsSecurityGroup.securityGroupId,
+        groupId: ecsSecurityGroup.securityGroupId,
       });
 
     const ecsIngressFromLoadbalancer: ec2.CfnSecurityGroupIngress =
       new ec2.CfnSecurityGroupIngress(this, "ecsIngressFromLoadbalancer", {
         ipProtocol: "-1",
-        sourceSecurityGroupId:
-          networkOutputParameters.loadbalancerSecurityGroupId,
-        groupId: ecsSecurityGroup.attrGroupId,
+        sourceSecurityGroupId: networkOutputParameters.loadBalancerArn,
+        groupId: networkOutputParameters.loadBalancerArn,
       });
 
     this.allowIngressFromEcs(
@@ -232,40 +256,220 @@ export class Service extends Construct {
       ecsSecurityGroup
     );
 
-    const service: ecs.CfnService = new ecs.CfnService(this, "ecsService", {
-      cluster: networkOutputParameters.ecsClusterName,
-      launchType: "FARGATE",
-      deploymentConfiguration: {
-        maximumPercent: serviceInputParameters.maximumInstancesPercent,
-        minimumHealthyPercent:
+    const firstService: ecs.FargateService = new ecs.FargateService(
+      this,
+      "firstEcsService",
+      {
+        cluster: this.ecsCluster,
+        taskDefinition: firstTaskDefinition,
+        desiredCount: serviceInputParameters.desiredInstancesCount,
+        securityGroups: [ecsSecurityGroup],
+        maxHealthyPercent: serviceInputParameters.maximumInstancesPercent,
+        minHealthyPercent:
           serviceInputParameters.minimumHealthyInstancesPercent,
-      },
-      desiredCount: serviceInputParameters.desiredInstancesCount,
-      taskDefinition: taskDefinition.ref,
-      loadBalancers: [
-        {
-          containerName: this.containerName(applicationEnvironment),
-          containerPort: serviceInputParameters.containerPort,
-          loadBalancerName: targetGroup.ref,
+        assignPublicIp: true,
+        serviceConnectConfiguration: {
+          namespace: namespace.namespaceName,
+          services: [
+            {
+              portMappingName: "product-port-mapping",
+              dnsName: "products.local",
+              port: 8080,
+              discoveryName: "products",
+            },
+          ],
         },
-      ],
-      networkConfiguration: {
-        awsvpcConfiguration: {
-          assignPublicIp: "ENABLED",
-          securityGroups: [ecsSecurityGroup.attrGroupId],
-          subnets: networkOutputParameters.publicSubnets,
-        },
-      },
-    });
+      }
+    );
 
-    service.addDependsOn(httpListenerRule);
+    const secondService: ecs.FargateService = new ecs.FargateService(
+      this,
+      "secondEcsService",
+      {
+        cluster: this.ecsCluster,
+        taskDefinition: secondTaskDefinition,
+        desiredCount: serviceInputParameters.desiredInstancesCount,
+        securityGroups: [ecsSecurityGroup],
+        maxHealthyPercent: serviceInputParameters.maximumInstancesPercent,
+        minHealthyPercent:
+          serviceInputParameters.minimumHealthyInstancesPercent,
+        assignPublicIp: true,
+        serviceConnectConfiguration: {
+          namespace: namespace.namespaceName,
+          services: [
+            {
+              portMappingName: "order-port-mapping",
+              dnsName: "orders.local",
+              port: 8081,
+              discoveryName: "orders",
+            },
+          ],
+        },
+      }
+    );
+
+    const thirdService: ecs.FargateService = new ecs.FargateService(
+      this,
+      "thirdEcsService",
+      {
+        cluster: this.ecsCluster,
+        taskDefinition: thirdTaskDefinition,
+        desiredCount: serviceInputParameters.desiredInstancesCount,
+        securityGroups: [ecsSecurityGroup],
+        maxHealthyPercent: serviceInputParameters.maximumInstancesPercent,
+        minHealthyPercent:
+          serviceInputParameters.minimumHealthyInstancesPercent,
+        assignPublicIp: true,
+        serviceConnectConfiguration: {
+          namespace: namespace.namespaceName,
+          services: [
+            {
+              portMappingName: "user-port-mapping",
+              dnsName: "users.local",
+              port: 8082,
+              discoveryName: "users",
+            },
+          ],
+        },
+      }
+    );
+
+    const firstTargetGroup = new elbv2.ApplicationTargetGroup(
+      this,
+      "firstTargetGroup",
+      {
+        targets: [firstService],
+        protocol: serviceInputParameters.containerProtocol,
+        vpc: this.vpc,
+        port: 8080,
+        deregistrationDelay: cdk.Duration.seconds(30),
+        healthCheck: {
+          path: serviceInputParameters.healthCheckPath,
+          healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
+          unhealthyThresholdCount:
+            serviceInputParameters.unhealthyThresholdCount,
+          interval: serviceInputParameters.healthCheckIntervalSeconds,
+          timeout: serviceInputParameters.healthCheckTimeoutSeconds,
+          healthyHttpCodes: "200",
+          port: serviceInputParameters.containerPort.toString(),
+        },
+      }
+    );
+
+    const secondTargetGroup = new elbv2.ApplicationTargetGroup(
+      this,
+      "secondTargetGroup",
+      {
+        targets: [secondService],
+        protocol: serviceInputParameters.containerProtocol,
+        vpc: this.vpc,
+        port: 8081,
+        deregistrationDelay: cdk.Duration.seconds(30),
+        healthCheck: {
+          path: serviceInputParameters.healthCheckPath,
+          healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
+          unhealthyThresholdCount:
+            serviceInputParameters.unhealthyThresholdCount,
+          interval: serviceInputParameters.healthCheckIntervalSeconds,
+          timeout: serviceInputParameters.healthCheckTimeoutSeconds,
+          healthyHttpCodes: "200",
+        },
+      }
+    );
+
+    const thirdTargetGroup = new elbv2.ApplicationTargetGroup(
+      this,
+      "thirdTargetGroup",
+      {
+        targets: [thirdService],
+        protocol: serviceInputParameters.containerProtocol,
+        vpc: this.vpc,
+        port: 8082,
+        deregistrationDelay: cdk.Duration.seconds(30),
+        healthCheck: {
+          path: serviceInputParameters.healthCheckPath,
+          healthyThresholdCount: serviceInputParameters.healthyThresholdCount,
+          unhealthyThresholdCount:
+            serviceInputParameters.unhealthyThresholdCount,
+          interval: serviceInputParameters.healthCheckIntervalSeconds,
+          timeout: serviceInputParameters.healthCheckTimeoutSeconds,
+          healthyHttpCodes: "200",
+        },
+      }
+    );
+
+    const firstActionProperty: elbv2.CfnListenerRule.ActionProperty = {
+      targetGroupArn: firstTargetGroup.targetGroupArn,
+      type: "forward",
+    };
+
+    const secondActionProperty: elbv2.CfnListenerRule.ActionProperty = {
+      targetGroupArn: secondTargetGroup.targetGroupArn,
+      type: "forward",
+    };
+
+    const thirdActionProperty: elbv2.CfnListenerRule.ActionProperty = {
+      targetGroupArn: thirdTargetGroup.targetGroupArn,
+      type: "forward",
+    };
+
+    const firstCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
+      field: "path-pattern",
+      values: ["/products"],
+    };
+
+    const secondCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
+      field: "path-pattern",
+      values: ["/orders"],
+    };
+
+    const thirdCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
+      field: "path-pattern",
+      values: ["/users"],
+    };
+
+    const firstHttpListenerRule = new elbv2.CfnListenerRule(
+      this,
+      "httpListenerRule",
+      {
+        actions: [firstActionProperty],
+        listenerArn: networkOutputParameters.httpListenerArn,
+        conditions: [firstCondition],
+        priority: 1,
+      }
+    );
+
+    const secondHttpListenerRule = new elbv2.CfnListenerRule(
+      this,
+      "httpListenerRule",
+      {
+        actions: [secondActionProperty],
+        listenerArn: networkOutputParameters.httpListenerArn,
+        conditions: [secondCondition],
+        priority: 2,
+      }
+    );
+
+    const thirdHttpListenerRule = new elbv2.CfnListenerRule(
+      this,
+      "httpListenerRule",
+      {
+        actions: [thirdActionProperty],
+        listenerArn: networkOutputParameters.httpListenerArn,
+        conditions: [thirdCondition],
+        priority: 3,
+      }
+    );
 
     applicationEnvironment.tag(this);
+
+    secondService.node.addDependency(firstService);
+    thirdService.node.addDependency(secondService);
   }
 
   allowIngressFromEcs(
     securityGroupIds: Array<string>,
-    ecsSecurityGroup: ec2.CfnSecurityGroup
+    ecsSecurityGroup: ec2.SecurityGroup
   ) {
     let i = 1;
     for (
@@ -273,12 +477,11 @@ export class Service extends Construct {
       securityGroupId < securityGroupIds.length;
       securityGroupId++
     ) {
-      let ingress: ec2.CfnSecurityGroupIngress =
-        new ec2.CfnSecurityGroupIngress(this, "securityGroupIngress" + i, {
-          sourceSecurityGroupId: ecsSecurityGroup.attrGroupId,
-          groupId: securityGroupIds[securityGroupId],
-          ipProtocol: "-1",
-        });
+      new ec2.CfnSecurityGroupIngress(this, "securityGroupIngress" + i, {
+        sourceSecurityGroupId: ecsSecurityGroup.securityGroupId,
+        groupId: securityGroupIds[securityGroupId],
+        ipProtocol: "-1",
+      });
       i++;
     }
   }
@@ -286,87 +489,38 @@ export class Service extends Construct {
   containerName(applicationEnvironment: ApplicationEnvironment) {
     return applicationEnvironment.prefix("container");
   }
-
-  keyValuePair(key: string, value: string) {
-    const keyValuePair: ecs.CfnTaskDefinition.KeyValuePairProperty = {
-      name: key,
-      value: value,
-    };
-
-    return keyValuePair;
-  }
-
-  // ts.ignore
-  toKeyValuePairs(map: object) {
-    let keyValuePairs = [];
-    for (const entry in Object.keys(map)) {
-      // @ts-ignore
-      keyValuePairs.push(this.keyValuePair(entry, map[entry]));
-    }
-
-    return keyValuePairs;
-  }
-}
-
-export class DockerImageSource {
-  dockerImageUrl: string;
-  dockerImageTag: string;
-  dockerRepositoryName: string;
-
-  constructor(dockerImageUrl: string) {
-    this.dockerImageUrl = dockerImageUrl;
-    this.dockerImageTag = "";
-    this.dockerRepositoryName = "";
-  }
-
-  isEcrSource(): boolean {
-    return this.dockerRepositoryName != "";
-  }
-
-  getDockerRepositoryName(): string {
-    return this.dockerRepositoryName;
-  }
-
-  getDockerImageTag(): string {
-    return this.dockerImageTag;
-  }
-
-  getDockerImageUrl(): string {
-    return this.dockerImageUrl;
-  }
 }
 
 export class ServiceInputParameters {
-  dockerImageSource: DockerImageSource;
-  environmentVariables: object;
+  environmentVariables: {[key: string]: string};
   securityGroupIdsToGrantIngressFromEcs: Array<string>;
   taskRolePolicyStatements: Array<iam.PolicyStatement>;
-  healthCheckIntervalSeconds: number;
+  healthCheckIntervalSeconds: cdk.Duration;
   healthCheckPath: string;
   containerPort: number;
-  containerProtocol: string;
-  healthCheckTimeoutSeconds: number;
+  containerProtocol: elbv2.ApplicationProtocol;
+  healthCheckTimeoutSeconds: cdk.Duration;
   healthyThresholdCount: number;
   unhealthyThresholdCount: number;
-  logRetention = logs.RetentionDays.ONE_WEEK;
+  logRetention: logs.RetentionDays;
   cpu: number;
   memory: number;
   desiredInstancesCount: number;
   maximumInstancesPercent: number;
   minimumHealthyInstancesPercent: number;
-  stickySessionsEnabled: boolean;
-  awslogsDateTimeFormat: string;
 
   constructor(
-    dockerImageSource: DockerImageSource,
-    environmentVariables: object
+    environmentVariables: {[key: string]: string},
+    securityGroupIdsToGrantIngressFromEcs: Array<string>
   ) {
-    this.dockerImageSource = dockerImageSource;
     this.environmentVariables = environmentVariables;
-    this.securityGroupIdsToGrantIngressFromEcs = [];
+    this.securityGroupIdsToGrantIngressFromEcs =
+      securityGroupIdsToGrantIngressFromEcs;
   }
 
-  withHealthCheckIntervalSeconds(healthCheckIntervalSeconds: number): number {
+  withHealthCheckIntervalSeconds(
+    healthCheckIntervalSeconds: cdk.Duration
+  ): cdk.Duration {
     this.healthCheckIntervalSeconds = healthCheckIntervalSeconds;
     return healthCheckIntervalSeconds;
   }
@@ -379,15 +533,16 @@ export class ServiceInputParameters {
     this.containerPort = containerPort;
     return containerPort;
   }
-  withContainerProtocol(containerProtocol: string): string {
+  withContainerProtocol(containerProtocol: elbv2.ApplicationProtocol): string {
     this.containerProtocol = containerProtocol;
     return containerProtocol;
   }
-  withHealthCheckTimeoutSeconds(healthCheckTimeoutSeconds: number): number {
+  withHealthCheckTimeoutSeconds(
+    healthCheckTimeoutSeconds: cdk.Duration
+  ): cdk.Duration {
     this.healthCheckTimeoutSeconds = healthCheckTimeoutSeconds;
     return healthCheckTimeoutSeconds;
   }
-
   withHealthyThresholdCount(healthyThresholdCount: number): number {
     this.healthyThresholdCount = healthyThresholdCount;
     return healthyThresholdCount;
@@ -427,14 +582,6 @@ export class ServiceInputParameters {
   ): Array<iam.PolicyStatement> {
     this.taskRolePolicyStatements = taskRolePolicyStatements;
     return taskRolePolicyStatements;
-  }
-  withStickySessionsEnabled(stickySessionsEnabled: boolean): boolean {
-    this.stickySessionsEnabled = stickySessionsEnabled;
-    return stickySessionsEnabled;
-  }
-  withAwsLogsDateTimeFormat(awslogsDateTimeFormat: string): string {
-    this.awslogsDateTimeFormat = awslogsDateTimeFormat;
-    return awslogsDateTimeFormat;
   }
 }
 
