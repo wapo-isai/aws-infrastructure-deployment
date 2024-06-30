@@ -8,7 +8,15 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "network:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\"",
+    "network:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\"",
+    "repository:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/DockerRepositorty.ts\"",
+    "repository:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/DockerRepositorty.ts\"",
+    "service:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\"",
+    "service:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\"",
+    "database:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\"",
+    "database:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\""
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
