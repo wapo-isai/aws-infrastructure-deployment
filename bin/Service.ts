@@ -91,7 +91,7 @@ function environmentVariables(scope: Construct, springProfile: string) {
   const databaseSecret: secrets.ISecret = secrets.Secret.fromSecretCompleteArn(
     scope,
     "databaseSecret",
-    databaseSecretArn
+    "arn:aws:secretsmanager:us-east-1:590184053459:secret:prod-brewed-awakening-DatabaseSecret-mfmO5N"
   );
 
   const envVars = {

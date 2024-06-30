@@ -10,7 +10,7 @@ import {
   CfnSecretTargetAttachment,
 } from "aws-cdk-lib/aws-secretsmanager";
 import {ApplicationEnvironment} from "./Service";
-import {Network, NetworkOutputParameters} from "./Network";
+import {ParameterVariables} from "./Network";
 
 export class DatabaseStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -18,7 +18,7 @@ export class DatabaseStack extends cdk.Stack {
   }
 }
 
-enum ParameterVariables {
+export enum DatabaseParameterVariables {
   PARAMETER_ENDPOINT_ADDRESS = "endpointAddress",
   PARAMETER_ENDPOINT_PORT = "endpointPort",
   PARAMETER_DATABASE_NAME = "databaseName",
@@ -46,21 +46,16 @@ export class Database extends Construct {
   constructor(
     scope: Construct,
     id: string,
-    awsEnvironment: cdk.Environment,
-    applicationEnvironment: ApplicationEnvironment,
-    databaseInputParameters: DatabaseInputParameters
+    applicationEnvironment: ApplicationEnvironment
   ) {
     super(scope, id);
 
     this.applicationEnvironment = applicationEnvironment;
 
-    const networkOutputParameters: NetworkOutputParameters =
-      Network.getOutputParametersFromParameterStore(
-        this,
-        applicationEnvironment.getEnvironmentName()
-      );
-
-    const vpcId = networkOutputParameters.vpcId;
+    const vpcId = ssm.StringParameter.valueFromLookup(
+      scope,
+      ParameterVariables.PARAMETER_VPC_ID
+    );
 
     this.vpc = ec2.Vpc.fromLookup(this, "ImportedVpc", {
       vpcId: vpcId,
@@ -76,11 +71,15 @@ export class Database extends Construct {
       }
     );
 
+    const username = this.sanitizeDbParameterName(
+      applicationEnvironment.prefix("dbUser")
+    );
+
     this.databaseSecret = new Secret(this, "databaseSecret", {
       secretName: this.applicationEnvironment.prefix("DatabaseSecret"),
       description: "Credentials to the RDS instance",
       generateSecretString: {
-        secretStringTemplate: JSON.stringify({username: "postgres"}),
+        secretStringTemplate: JSON.stringify({username: username}),
         generateStringKey: "password",
         passwordLength: 32,
         excludeCharacters: '/@"',
@@ -95,10 +94,6 @@ export class Database extends Construct {
         this.vpc.isolatedSubnets[1].subnetId,
       ],
     });
-
-    const username = this.sanitizeDbParameterName(
-      applicationEnvironment.prefix("dbUser")
-    );
 
     this.dbInstance = new rds.CfnDBInstance(this, "postgresInstance", {
       dbInstanceIdentifier: this.applicationEnvironment.prefix("database"),
@@ -166,87 +161,81 @@ export class Database extends Construct {
     scope: Construct,
     environment: ApplicationEnvironment
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_INSTANCE_ID,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_INSTANCE_ID
+        DatabaseParameterVariables.PARAMETER_INSTANCE_ID
       )
-    ).stringValue;
+    );
   }
 
   static getEndpointAddress(
     scope: Construct,
     environment: ApplicationEnvironment
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_ENDPOINT_ADDRESS,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_ENDPOINT_ADDRESS
+        DatabaseParameterVariables.PARAMETER_ENDPOINT_ADDRESS
       )
-    ).stringValue;
+    );
   }
 
   static getEndpointPort(
     scope: Construct,
     environment: ApplicationEnvironment
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_ENDPOINT_PORT,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_ENDPOINT_PORT
+        DatabaseParameterVariables.PARAMETER_ENDPOINT_PORT
       )
-    ).stringValue;
+    );
   }
 
   static getDbName(scope: Construct, environment: ApplicationEnvironment) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_DATABASE_NAME,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_DATABASE_NAME
+        DatabaseParameterVariables.PARAMETER_DATABASE_NAME
       )
-    ).stringValue;
+    );
   }
 
   static getDatabaseSecretArn(
     scope: Construct,
     environment: ApplicationEnvironment
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_SECRET_ARN,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_SECRET_ARN
+        DatabaseParameterVariables.PARAMETER_SECRET_ARN
       )
-    ).stringValue;
+    );
   }
   static getDatabaseSecurityGroupId(
     scope: Construct,
     environment: ApplicationEnvironment
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_SECURITY_GROUP_ID,
       this.createParameterName(
         environment,
-        ParameterVariables.PARAMETER_SECURITY_GROUP_ID
+        DatabaseParameterVariables.PARAMETER_SECURITY_GROUP_ID
       )
-    ).stringValue;
+    );
   }
 
   createOutputParameters() {
     const endpointAddress = new ssm.StringParameter(this, "endpointAddress", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_ENDPOINT_ADDRESS
+        DatabaseParameterVariables.PARAMETER_ENDPOINT_ADDRESS
       ),
       stringValue: this.dbInstance.attrEndpointAddress,
     });
@@ -254,7 +243,7 @@ export class Database extends Construct {
     const endpointPort = new ssm.StringParameter(this, "endpointPort", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_ENDPOINT_PORT
+        DatabaseParameterVariables.PARAMETER_ENDPOINT_PORT
       ),
       stringValue: this.dbInstance.attrEndpointPort,
     });
@@ -262,7 +251,7 @@ export class Database extends Construct {
     const databaseName = new ssm.StringParameter(this, "databaseName", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_DATABASE_NAME
+        DatabaseParameterVariables.PARAMETER_DATABASE_NAME
       ),
       stringValue: this.dbInstance.dbName ? this.dbInstance.dbName : "",
     });
@@ -270,7 +259,7 @@ export class Database extends Construct {
     const securityGroupId = new ssm.StringParameter(this, "securityGroupId", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_SECURITY_GROUP_ID
+        DatabaseParameterVariables.PARAMETER_SECURITY_GROUP_ID
       ),
       stringValue: this.databaseSecurityGroup.attrGroupId,
     });
@@ -278,15 +267,17 @@ export class Database extends Construct {
     const secret = new ssm.StringParameter(this, "secret", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_SECRET_ARN
+        DatabaseParameterVariables.PARAMETER_SECRET_ARN
       ),
-      stringValue: this.databaseSecret.secretArn,
+      stringValue: this.databaseSecret.secretFullArn
+        ? this.databaseSecret.secretFullArn
+        : this.databaseSecret.secretArn,
     });
 
     const instanceId = new ssm.StringParameter(this, "instanceId", {
       parameterName: this.createParameterName(
         this.applicationEnvironment,
-        ParameterVariables.PARAMETER_INSTANCE_ID
+        DatabaseParameterVariables.PARAMETER_INSTANCE_ID
       ),
       stringValue: this.dbInstance.dbInstanceIdentifier
         ? this.dbInstance.dbInstanceIdentifier

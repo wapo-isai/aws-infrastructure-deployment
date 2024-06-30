@@ -2,12 +2,12 @@ import * as cdk from "aws-cdk-lib/core";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import {Construct, IConstruct} from "constructs";
-import {NetworkOutputParameters} from "./Network";
+import {NetworkOutputParameters, ParameterVariables} from "./Network";
 import {PrivateDnsNamespace} from "aws-cdk-lib/aws-servicediscovery";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 
 export class ServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -39,7 +39,10 @@ export class Service extends Construct {
     this.ordersDockerRepositoryUrl = ordersDockerRepositoryUrl;
     this.productsDockerRepositoryUrl = productsDockerRepositoryUrl;
 
-    const vpcId = networkOutputParameters.vpcId;
+    const vpcId = ssm.StringParameter.valueFromLookup(
+      scope,
+      ParameterVariables.PARAMETER_VPC_ID
+    );
 
     this.vpc = ec2.Vpc.fromLookup(this, "ImportedVpc", {
       vpcId: vpcId,
@@ -247,8 +250,9 @@ export class Service extends Construct {
     const ecsIngressFromLoadbalancer: ec2.CfnSecurityGroupIngress =
       new ec2.CfnSecurityGroupIngress(this, "ecsIngressFromLoadbalancer", {
         ipProtocol: "-1",
-        sourceSecurityGroupId: networkOutputParameters.loadBalancerArn,
-        groupId: networkOutputParameters.loadBalancerArn,
+        sourceSecurityGroupId:
+          networkOutputParameters.loadbalancerSecurityGroupId,
+        groupId: networkOutputParameters.loadbalancerSecurityGroupId,
       });
 
     this.allowIngressFromEcs(
@@ -430,34 +434,34 @@ export class Service extends Construct {
 
     const firstHttpListenerRule = new elbv2.CfnListenerRule(
       this,
-      "httpListenerRule",
+      "firstHttpListenerRule",
       {
         actions: [firstActionProperty],
         listenerArn: networkOutputParameters.httpListenerArn,
         conditions: [firstCondition],
-        priority: 1,
+        priority: 2,
       }
     );
 
     const secondHttpListenerRule = new elbv2.CfnListenerRule(
       this,
-      "httpListenerRule",
+      "secondHttpListenerRule",
       {
         actions: [secondActionProperty],
         listenerArn: networkOutputParameters.httpListenerArn,
         conditions: [secondCondition],
-        priority: 2,
+        priority: 3,
       }
     );
 
     const thirdHttpListenerRule = new elbv2.CfnListenerRule(
       this,
-      "httpListenerRule",
+      "thirdHttpListenerRule",
       {
         actions: [thirdActionProperty],
         listenerArn: networkOutputParameters.httpListenerArn,
         conditions: [thirdCondition],
-        priority: 3,
+        priority: 4,
       }
     );
 

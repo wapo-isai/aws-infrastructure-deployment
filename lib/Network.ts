@@ -5,7 +5,7 @@ import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import {Construct} from "constructs";
 
-enum ParameterVariables {
+export enum ParameterVariables {
   PARAMETER_VPC_ID = "vpcId",
   PARAMETER_HTTP_LISTENER = "httpListenerArn",
   PARAMETER_LOADBALANCER_SECURITY_GROUP_ID = "loadBalancerSecurityGroupId",
@@ -114,10 +114,29 @@ export class Network extends Construct {
       }
     );
 
-    const httpListener = this.loadBalancer.addListener("Listener", {
+    const dummyTargetGroup: elbv2.ApplicationTargetGroup =
+      new elbv2.ApplicationTargetGroup(this, "defaultTargetGroup", {
+        vpc: this.vpc,
+        port: 3000,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targetGroupName: this.prefixWithEnvironmentName("no-op-targetGroup"),
+        targetType: elbv2.TargetType.IP,
+        deregistrationDelay: cdk.Duration.seconds(5),
+        healthCheck: {
+          healthyThresholdCount: 2,
+          interval: cdk.Duration.seconds(10),
+          timeout: cdk.Duration.seconds(5),
+        },
+      });
+
+    this.httpListener = this.loadBalancer.addListener("Listener", {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
       open: true,
+    });
+
+    this.httpListener.addTargetGroups("http-defaultTargetGroup", {
+      targetGroups: [dummyTargetGroup],
     });
 
     this.createOutputParameters();
@@ -264,77 +283,53 @@ export class Network extends Construct {
     return networkParams;
   }
   static getVpcIdFromParameterStore(scope: Construct, environmentName: string) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_VPC_ID,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_VPC_ID
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_VPC_ID
+    );
   }
 
   static getHttpListenerArnFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_HTTP_LISTENER,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_HTTP_LISTENER
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_HTTP_LISTENER
+    );
   }
 
   static getLoadbalancerSecurityGroupIdFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_LOADBALANCER_SECURITY_GROUP_ID,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_LOADBALANCER_SECURITY_GROUP_ID
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_LOADBALANCER_SECURITY_GROUP_ID
+    );
   }
   static getEcsClusterNameFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_ECS_CLUSTER_NAME,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_ECS_CLUSTER_NAME
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_ECS_CLUSTER_NAME
+    );
   }
   static getIsolatedSubnetsFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
     return [
-      ssm.StringParameter.fromStringParameterName(
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_ISOLATED_SUBNET_ONE,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_ISOLATED_SUBNET_ONE
-        )
-      ).stringValue,
-      ssm.StringParameter.fromStringParameterName(
+        ParameterVariables.PARAMETER_ISOLATED_SUBNET_ONE
+      ),
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_ISOLATED_SUBNET_TWO,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_ISOLATED_SUBNET_TWO
-        )
-      ).stringValue,
+        ParameterVariables.PARAMETER_ISOLATED_SUBNET_TWO
+      ),
     ];
   }
   static getPublicSubnetsFromParameterStore(
@@ -342,22 +337,14 @@ export class Network extends Construct {
     environmentName: string
   ) {
     return [
-      ssm.StringParameter.fromStringParameterName(
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_PUBLIC_SUBNET_ONE,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_PUBLIC_SUBNET_ONE
-        )
-      ).stringValue,
-      ssm.StringParameter.fromStringParameterName(
+        ParameterVariables.PARAMETER_PUBLIC_SUBNET_ONE
+      ),
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_PUBLIC_SUBNET_TWO,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_PUBLIC_SUBNET_TWO
-        )
-      ).stringValue,
+        ParameterVariables.PARAMETER_PUBLIC_SUBNET_TWO
+      ),
     ];
   }
   static getAvailabilityZonesFromParameterStore(
@@ -365,61 +352,41 @@ export class Network extends Construct {
     environmentName: string
   ) {
     return [
-      ssm.StringParameter.fromStringParameterName(
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_AVAILABILITY_ZONE_ONE,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_AVAILABILITY_ZONE_ONE
-        )
-      ).stringValue,
-      ssm.StringParameter.fromStringParameterName(
+        ParameterVariables.PARAMETER_AVAILABILITY_ZONE_ONE
+      ),
+      ssm.StringParameter.valueFromLookup(
         scope,
-        ParameterVariables.PARAMETER_AVAILABILITY_ZONE_TWO,
-        this.createParameterName(
-          environmentName,
-          ParameterVariables.PARAMETER_AVAILABILITY_ZONE_TWO
-        )
-      ).stringValue,
+        ParameterVariables.PARAMETER_AVAILABILITY_ZONE_TWO
+      ),
     ];
   }
   static getLoadBalancerArnFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_LOAD_BALANCER_ARN,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_LOAD_BALANCER_ARN
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_LOAD_BALANCER_ARN
+    );
   }
   static getLoadBalancerDnsNameFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_LOAD_BALANCER_DNS_NAME,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_LOAD_BALANCER_DNS_NAME
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_LOAD_BALANCER_DNS_NAME
+    );
   }
   static getLoadBalancerCanonicalHostedZoneIdFromParameterStore(
     scope: Construct,
     environmentName: string
   ) {
-    return ssm.StringParameter.fromStringParameterName(
+    return ssm.StringParameter.valueFromLookup(
       scope,
-      ParameterVariables.PARAMETER_LOAD_BALANCER_HOSTED_ZONE_ID,
-      this.createParameterName(
-        environmentName,
-        ParameterVariables.PARAMETER_LOAD_BALANCER_HOSTED_ZONE_ID
-      )
-    ).stringValue;
+      ParameterVariables.PARAMETER_LOAD_BALANCER_HOSTED_ZONE_ID
+    );
   }
 }
