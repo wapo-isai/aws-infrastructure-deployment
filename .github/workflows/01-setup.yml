@@ -27,4 +27,4 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Deploy Docker registry
-        run: npm run repository:deploy
+        run: npm run repository:deploy --all --require-approval never
