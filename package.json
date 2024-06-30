@@ -9,14 +9,14 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "network:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\"",
-    "network:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\"",
-    "repository:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/DockerRepository.ts\"",
-    "repository:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/DockerRepository.ts\"",
-    "service:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\"",
-    "service:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\"",
-    "database:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\"",
-    "database:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\""
+    "network:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\" --require-approval never",
+    "network:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Network.ts\" --force --require-approval never",
+    "repository:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/DockerRepository.ts\" --require-approval never",
+    "repository:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/DockerRepository.ts\" --force --require-approval never",
+    "service:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\" --require-approval never",
+    "service:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Service.ts\" --force --require-approval never",
+    "database:deploy": "cdk deploy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\" --require-approval never",
+    "database:destroy": "cdk destroy --app \"npx ts-node --prefer-ts-exts bin/Database.ts\" --force --require-approval never"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
