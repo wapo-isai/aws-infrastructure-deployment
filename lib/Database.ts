@@ -106,7 +106,9 @@ export class Database extends Construct {
       dbSubnetGroupName: subnetGroup.dbSubnetGroupName,
       engine: "postgres",
       engineVersion: "16.3",
-      masterUsername: username,
+      masterUsername: this.databaseSecret
+        .secretValueFromJson("username")
+        .unsafeUnwrap(),
       masterUserPassword: this.databaseSecret
         .secretValueFromJson("password")
         .unsafeUnwrap(),
