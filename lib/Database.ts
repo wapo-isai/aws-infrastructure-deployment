@@ -271,9 +271,7 @@ export class Database extends Construct {
         this.applicationEnvironment,
         DatabaseParameterVariables.PARAMETER_SECRET_ARN
       ),
-      stringValue: this.databaseSecret.secretFullArn
-        ? this.databaseSecret.secretFullArn
-        : this.databaseSecret.secretArn,
+      stringValue: this.databaseSecret.secretName,
     });
 
     const instanceId = new ssm.StringParameter(this, "instanceId", {

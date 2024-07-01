@@ -419,17 +419,17 @@ export class Service extends Construct {
 
     const firstCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
       field: "path-pattern",
-      values: ["/products"],
+      values: ["/product-catalog/*"],
     };
 
     const secondCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
       field: "path-pattern",
-      values: ["/orders"],
+      values: ["/orders/*"],
     };
 
     const thirdCondition: elbv2.CfnListenerRule.RuleConditionProperty = {
       field: "path-pattern",
-      values: ["/users"],
+      values: ["/users/*"],
     };
 
     const firstHttpListenerRule = new elbv2.CfnListenerRule(

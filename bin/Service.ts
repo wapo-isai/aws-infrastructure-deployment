@@ -60,7 +60,7 @@ const serviceInputParameters: ServiceInputParameters =
   );
 
 serviceInputParameters.withContainerPort(8080);
-serviceInputParameters.withHealthCheckPath("/");
+serviceInputParameters.withHealthCheckPath("/actuator/health");
 serviceInputParameters.withHealthCheckIntervalSeconds(cdk.Duration.seconds(10));
 serviceInputParameters.withContainerProtocol(elbv2.ApplicationProtocol.HTTP);
 serviceInputParameters.withHealthCheckTimeoutSeconds(cdk.Duration.seconds(5));
@@ -87,11 +87,12 @@ new Service(
 );
 
 function environmentVariables(scope: Construct, springProfile: string) {
-  const databaseSecretArn: string = databaseOutputParameters.databaseSecretArn;
-  const databaseSecret: secrets.ISecret = secrets.Secret.fromSecretCompleteArn(
+  // const databaseSecretArn: string = databaseOutputParameters.databaseSecretArn;
+
+  const databaseSecret: secrets.ISecret = secrets.Secret.fromSecretNameV2(
     scope,
     "databaseSecret",
-    databaseSecretArn
+    "prod-brewed-awakening-DatabaseSecret"
   );
 
   const envVars = {
